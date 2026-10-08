@@ -51,15 +51,35 @@ export function cellsOf(fen) {
   return fen.split(' ')[0].split('/').map((r) => r.replace(/\d/g, (d) => '.'.repeat(+d))).join('');
 }
 
-export function orientationScore(labels) {
-  let ws = 0, wn = 0, bs = 0, bn = 0;
+// Orientation clues from piece placement, in image order (row 0 = top).
+// pawns: files where white and black pawns face each other (they would collide
+//   walking forward): + if white's pawn is below black's (white at the bottom).
+// side:  pieces (pawns x3, kings x2) on their own side of the board (white in the lower half, black
+//   in the upper half) minus pieces on the other side.
+export function orientationClues(labels) {
+  let pawns = 0, side = 0;
+  for (let f = 0; f < 8; f++) {
+    let below = 0, above = 0;
+    for (let r = 0; r < 8; r++) {
+      if (labels[r * 8 + f] !== 'P') continue;
+      for (let r2 = 0; r2 < 8; r2++) if (labels[r2 * 8 + f] === 'p') { if (r > r2) below++; else above++; }
+    }
+    if (below > above) pawns++; else if (above > below) pawns--;
+  }
   labels.forEach((c, i) => {
     if (c === '.') return;
-    const r = i >> 3, w = c.toLowerCase() === 'k' ? 3 : 1;
-    if (c === c.toUpperCase()) { ws += r * w; wn += w; } else { bs += r * w; bn += w; }
+    const low = (i >> 3) >= 4, white = c === c.toUpperCase();
+    const w = 'Pp'.includes(c) ? 3 : 'Kk'.includes(c) ? 2 : 1;   // pawns can't go back; kings rarely wander
+    side += (white === low) ? w : -w;
   });
-  if (!wn || !bn) return 0;
-  return ws / wn - bs / bn;
+  return { pawns, side };
+}
+// guessed orientation (true = white at the bottom) and which clue decided it
+export function guessOrientation(labels, fallback = true) {
+  const { pawns, side } = orientationClues(labels);
+  if (pawns) return { wb: pawns > 0, by: 'pawns' };
+  if (side) return { wb: side > 0, by: 'pieces' };
+  return { wb: fallback, by: null };
 }
 
 export function sanity(cells) {
@@ -133,12 +153,12 @@ function moveMatchesPair(m, pairSet) {
 
 // Rebuild the position before a highlighted move and check the move is legal
 // there and leads exactly to `cells`. Returns the resulting FEN or null.
-function explainMove(cells, pair) {
+function explainMove(cells, pair, strict = true) {
   const target = placementOf(cells);
   const tryPrev = (prev, mover, from, to, ep) => {
     if (sanity(prev)) return null;
     const fen0 = `${placementOf(prev)} ${mover} ${castlingFromCells(prev)} ${ep || '-'} 0 1`;
-    if (!legalFor(fen0)) return null;                // the side that just moved can't be the one in check before it
+    if (strict && !legalFor(fen0)) return null;                // the side that just moved can't be the one in check before it
     const c = load(fen0); if (!c) return null;
     let ms = [];
     try { ms = c.moves({ square: sqName(from), verbose: true }); } catch { return null; }
@@ -199,7 +219,7 @@ export class BeliefTracker {
     this.best = null;
     this.prevRawKey = null; this.processedKey = null;
     this.orient = null; this.orientVotes = 0; this.whiteBottom = true;
-    this.coordHint = null;
+    this.coordHint = null; this.orientBy = null;
     this.lastDecision = 'waiting for a move to be highlighted';
   }
 
@@ -245,21 +265,28 @@ export class BeliefTracker {
     // Read the board both ways: switch if only the flipped reading is a legal
     // position + legal move, or if both are and the piece placement clearly
     // says the board is flipped.
-    if (auto && (this.coordHint === null || this.coordHint === undefined) && pairSq && this.history.length && pairSq.join('') !== this.lastPairKey) {
+    // Orientation fallback (when the board's coordinates can't be read):
+    //   1. is the highlighted move legal (and the position) one way but not the other?
+    //   2. pawns facing each other on a file   3. pieces on their own half
+    // A new move that doesn't continue the known game may be a new game shown
+    // from the other side, so this is re-checked for every such move.
+    if (auto && (this.coordHint === null || this.coordHint === undefined) && pairSq && pairSq.join('') !== this.lastPairKey) {
       const alt = this.readAs(probs, pair, !wb);
-      const altDef = alt.pairSq && this.defaultBelief(alt.cells, alt.pairSq);
-      if (altDef) {
-        const curDef = this.defaultBelief(cells, pairSq);
-        const sc = orientationScore(labels);          // > 0: white pieces sit lower in the image
-        const favoursAlt = alt.wb ? sc > 1.0 : sc < -1.0;
-        if (!curDef || favoursAlt) {
-          this.orient = alt.wb; this.whiteBottom = alt.wb; this.orientVotes = 0;
-          this.history = []; this.lastPairKey = null; this.lastPair = null; this.best = null;
-          this.rawCells = alt.cells; this.rawPair = alt.pairSq;
-          const changed = this.processScan(alt.cells, alt.pairSq, alt.lp);
-          if (changed) this.lastDecision += ' (board flipped: new orientation)';
-          return { changed: true };
-        }
+      const altDef = alt.pairSq && this.moveFits(alt.cells, alt.pairSq);
+      const curDef = this.moveFits(cells, pairSq);
+      let useAlt = false, by = null;
+      if (altDef && !curDef) { useAlt = true; by = 'legality'; }
+      else if (curDef && !altDef) by = 'legality';
+      else if (altDef && curDef) { const g = guessOrientation(labels, wb); useAlt = g.wb === alt.wb; by = g.by; }
+      if (by) this.orientBy = by;
+      if (useAlt) {
+        const had = this.history.length > 0;
+        this.orient = alt.wb; this.whiteBottom = alt.wb; this.orientVotes = 0;
+        this.history = []; this.lastPairKey = null; this.lastPair = null; this.best = null;
+        this.rawCells = alt.cells; this.rawPair = alt.pairSq;
+        const changed = this.processScan(alt.cells, alt.pairSq, alt.lp);
+        if (changed && had) this.lastDecision += ' (board flipped: new orientation)';
+        return { changed: true };
       }
     }
     return { changed: this.processScan(cells, pairSq, lp) };
@@ -302,12 +329,10 @@ export class BeliefTracker {
       // look "flipped" and must not throw the history away (use the Bottom
       // buttons if a video really flips the board)
     } else {
-      const sc = orientationScore(labels);
-      if (this.orient === null) { if (Math.abs(sc) > 0.3) this.orient = sc > 0; }
-      else if ((sc > 1.5 && !this.orient) || (sc < -1.5 && this.orient)) {
-        if (++this.orientVotes >= 3) { this.orient = !this.orient; this.orientVotes = 0; }
-      } else this.orientVotes = 0;
-      this.whiteBottom = this.orient === null ? true : this.orient;
+      // nothing tracked yet: best guess from the pieces until a highlighted move
+      // can be checked for legality (in update)
+      const g = guessOrientation(labels, this.orient === null ? true : this.orient);
+      this.orient = g.wb; this.whiteBottom = g.wb; this.orientBy = g.by || this.orientBy || 'default';
     }
     return before !== this.whiteBottom && this.history.length > 0;
   }
@@ -414,6 +439,15 @@ export class BeliefTracker {
   // is legal AND the highlighted move is a legal move that produces it: the
   // position before the move is rebuilt (trying every possible captured piece,
   // promotion, castling and en passant) and chess.js must find that move there.
+  // Could the highlighted move have been played on this reading of the board?
+  // Used to tell orientations apart, so only the move matters here (pawns
+  // move forward, castling...); "who is in check" is skipped because a single
+  // misread piece can fake a check one way and not the other.
+  moveFits(cells, pairSq) {
+    if (sanity(cells)) return false;
+    return !!explainMove(cells, pairSq.map(sqIndex), false);
+  }
+
   defaultBelief(cells, pairSq) {
     if (sanity(cells)) return null;
     const res = explainMove(cells, pairSq.map(sqIndex));

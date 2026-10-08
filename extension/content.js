@@ -83,14 +83,14 @@
     const m = e.data || {};
     switch (m.type) {
       case 'ready': if (!st.region) startSelect(); else toPanel({ type: 'status', text: 'scanning' }); break;
-      case 'frame-done': st.busy = false; schedule(); break;
+      case 'frame-done': st.inFlight = Math.max(0, (st.inFlight || 0) - 1); schedule(); break;
       case 'rescan': frameSeq++; confirmed = false; schedule(); break;   // treat the current frame as new
       case 'coords-wanted': coordsWanted = !!m.value; lastCoordAt = 0; break;
       case 'arrows': st.arrows = m.arrows || []; st.badge = m.badge || null; drawArrows(); break;
       case 'show-arrows': st.showArrows = !!m.value; drawArrows(); break;
       case 'pause': st.paused = !!m.value; if (!st.paused) { frameSeq++; schedule(); } break;
       case 'rate': {
-        const hz = Math.min(30, Math.max(0.5, Number(m.value) || 5));
+        const hz = Math.min(60, Math.max(0.5, Number(m.value) || 30));
         scanMs = Math.round(1000 / hz);
         schedule();
         break;
@@ -211,11 +211,12 @@
   // A slow watchdog handles ads, replaced video elements, the URL guard and
   // keeping the overlay in place.
   const CONFIRM_MS = 250;
+  const MAX_IN_FLIGHT = 2;            // one frame being read while the next is captured
   let frameSeq = 0, scannedSeq = 0, lastScanAt = 0, confirmed = false;
   let waitTimer = null, confirmTimer = null, rvfcVideo = null;
 
   function startLoop() {
-    clearInterval(st.timer); st.running = true; st.busy = false;
+    clearInterval(st.timer); st.running = true; st.inFlight = 0;
     st.timer = setInterval(watchdog, 250);
     lastStatus = null; frameSeq++; watchdog(); schedule();
   }
@@ -248,7 +249,7 @@
 
   // scan now if allowed, otherwise when the rate limit / current scan permits
   function schedule() {
-    if (!st.running || st.paused || st.busy || document.hidden) return;
+    if (!st.running || st.paused || (st.inFlight || 0) >= MAX_IN_FLIGHT || document.hidden) return;
     const pending = frameSeq !== scannedSeq;
     if (!pending) {
       // nothing new: confirm the last frame once after a short quiet period
@@ -321,10 +322,10 @@
     try {
       bctx.drawImage(v, R.nx * v.videoWidth, R.ny * v.videoHeight, R.nw * v.videoWidth, R.nh * v.videoHeight, 0, 0, BOARD_PX, BOARD_PX);
       const img = bctx.getImageData(0, 0, BOARD_PX, BOARD_PX);
-      st.busy = true; lastScanAt = performance.now();
+      st.inFlight = (st.inFlight || 0) + 1; lastScanAt = performance.now();
       toPanel({ type: 'frame', w: BOARD_PX, h: BOARD_PX, buf: img.data.buffer, sent: performance.now() + performance.timeOrigin }, [img.data.buffer]);
     } catch (err) {
-      st.busy = false;
+      st.inFlight = Math.max(0, (st.inFlight || 0) - 1);
       toPanel({ type: 'status', text: 'error', detail: String(err && err.message || err) });
     }
   }

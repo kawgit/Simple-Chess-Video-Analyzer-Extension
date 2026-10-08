@@ -41,6 +41,7 @@ recog.onmessage = (e) => {
   if (m.type === 'error') { setStatus('error', 'recognizer failed to load: ' + m.error); parentPost({ type: 'frame-done' }); return; }
   if (m.type === 'coords') { onCoords(m); return; }
   if (m.type !== 'result') return;
+  parentPost({ type: 'frame-done' });          // free the capture slot right away; the work below is local
   const now = performance.now();
   recogMs.push([now, m.ms]);
   const tUpd = performance.now() + performance.timeOrigin;
@@ -49,8 +50,7 @@ recog.onmessage = (e) => {
   lastConf = tracker.conf;
   updatePresence(looksLikeBoard(m));
   if (res.changed && boardPresent) onPosition();
-  renderInfo(); renderMini();
-  parentPost({ type: 'frame-done' });
+  renderPending = true;                       // DOM updates at most once per animation frame
   frameT.push(now);
 };
 
@@ -79,6 +79,12 @@ function stopAnalysis() {
   if (searching) { ignoreUntilBestmove = true; engine.postMessage('stop'); }
   pendingFen = null; currentFen = null; lines = []; seed = null; renderLines();
 }
+
+let renderPending = false;
+(function uiLoop() {
+  if (renderPending) { renderPending = false; renderInfo(); renderMini(); }
+  requestAnimationFrame(uiLoop);
+})();
 
 // scan stats, refreshed twice a second (averaged so the numbers don't flicker)
 setInterval(() => {
@@ -325,6 +331,7 @@ function moveLabel(b) {
 }
 
 function renderInfo() {
+  { const as = $('autoSide'); const t = orientMode === 'auto' ? `(${tracker.whiteBottom ? 'White' : 'Black'})` : ''; if (as && as.textContent !== t) as.textContent = t; }
   const b = tracker.best;
   if (!boardPresent) {
     $('toMove').textContent = 'No chessboard detected';
@@ -341,7 +348,7 @@ function renderInfo() {
       : `last move ${tracker.rawPair ? tracker.rawPair.join('-') : ''} · no history yet`;
   }
   $('fen').textContent = b ? b.fen : '';
-  const how = orientMode !== 'auto' ? 'set by you' : tracker.coordHint !== null ? 'from board coordinates' : 'guessed from pieces';
+  const how = orientMode !== 'auto' ? 'set by you' : tracker.coordHint !== null ? 'from board coordinates' : ({ legality: 'from move legality', pawns: 'guessed from pawns', pieces: 'guessed from piece placement' }[tracker.orientBy] || 'guessed (white at the bottom)');
   $('scanInfo').textContent = `Last scan: ${tracker.lastDecision} · ${tracker.history.length} beliefs kept · orientation ${how}`;
 }
 
@@ -384,7 +391,7 @@ function onCoords(m) {
 }
 
 $('orientSeg').addEventListener('click', (e) => {
-  const v = e.target.dataset && e.target.dataset.v; if (!v) return;
+  const btn = e.target.closest && e.target.closest('button'); const v = btn && btn.dataset.v; if (!v) return;
   orientMode = v; coordPrev = null; coordStreak = 0;
   parentPost({ type: 'coords-wanted', value: v === 'auto' });
   for (const b of $('orientSeg').children) b.classList.toggle('on', b.dataset.v === v);

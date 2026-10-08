@@ -21,7 +21,7 @@
 
   <div class="row">
     <span class="lbl">Bottom</span>
-    <div class="seg" id="orientSeg"><button data-v="auto" class="on">Auto</button><button data-v="white">White</button><button data-v="black">Black</button></div>
+    <div class="seg" id="orientSeg"><button data-v="auto" class="on">Auto <span id="autoSide">(White)</span></button><button data-v="white">White</button><button data-v="black">Black</button></div>
   </div>
 
   <div class="row toggles">
@@ -40,7 +40,7 @@
     <summary>Detected board</summary>
     <div class="row">
       <span class="lbl">Max rate</span>
-      <input type="range" id="rate" min="1" max="30" step="1" value="30">
+      <input type="range" id="rate" min="1" max="60" step="1" value="30">
       <span id="rateVal" class="hint">30 Hz</span>
     </div>
     <div id="perfRow" class="hint"><span id="perf"></span></div>
