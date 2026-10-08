@@ -199,6 +199,7 @@ export class BeliefTracker {
     this.best = null;
     this.prevRawKey = null; this.processedKey = null;
     this.orient = null; this.orientVotes = 0; this.whiteBottom = true;
+    this.coordHint = null;
     this.lastDecision = 'waiting for a move to be highlighted';
   }
 
@@ -244,7 +245,7 @@ export class BeliefTracker {
     // Read the board both ways: switch if only the flipped reading is a legal
     // position + legal move, or if both are and the piece placement clearly
     // says the board is flipped.
-    if (auto && pairSq && this.history.length && pairSq.join('') !== this.lastPairKey) {
+    if (auto && (this.coordHint === null || this.coordHint === undefined) && pairSq && this.history.length && pairSq.join('') !== this.lastPairKey) {
       const alt = this.readAs(probs, pair, !wb);
       const altDef = alt.pairSq && this.defaultBelief(alt.cells, alt.pairSq);
       if (altDef) {
@@ -277,10 +278,25 @@ export class BeliefTracker {
     return { wb, lp, cells, pairSq };
   }
 
+  // Orientation read from the board's coordinate labels (auto mode). Returns true
+  // if it changed the orientation of a game in progress (history is reset).
+  setCoordHint(wb, weak = false) {
+    if (wb === null) { if (!weak) this.coordHint = null; return false; }
+    this.coordHint = wb;
+    if (this.orient === wb && this.whiteBottom === wb) return false;
+    const had = this.history.length > 0;
+    this.orient = wb; this.whiteBottom = wb; this.orientVotes = 0;
+    this.history = []; this.lastPairKey = null; this.lastPair = null; this.best = null;
+    this.prevRawKey = null; this.processedKey = null;
+    this.lastDecision = 'board orientation read from coordinates';
+    return had;
+  }
+
   updateOrientation(labels, mode) {
     const before = this.whiteBottom;
     if (mode === 'white') this.whiteBottom = true;
     else if (mode === 'black') this.whiteBottom = false;
+    else if (this.coordHint !== null && this.coordHint !== undefined) this.whiteBottom = this.coordHint;
     else if (this.history.length && this.orient !== null) {
       // locked once moves are being tracked: piece placement late in a game can
       // look "flipped" and must not throw the history away (use the Bottom

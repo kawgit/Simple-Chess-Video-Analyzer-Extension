@@ -11,8 +11,8 @@ const MULTIPV = 3, MAX_DEPTH = 24;
 const tracker = new BeliefTracker();
 let orientMode = 'auto';
 let paused = false;
-let maxHz = 5;
-try { maxHz = Number(localStorage.getItem('maxHz')) || 5; } catch {}
+let maxHz = 30;
+try { maxHz = Number(localStorage.getItem('maxHz')) || 30; } catch {}
 let lastConf = null;
 let frameId = 0, frameT = [], recogMs = [];
 // board presence, with hysteresis so one odd frame doesn't flip it
@@ -39,6 +39,7 @@ const recog = new Worker('recog-worker.js');
 recog.onmessage = (e) => {
   const m = e.data;
   if (m.type === 'error') { setStatus('error', 'recognizer failed to load: ' + m.error); parentPost({ type: 'frame-done' }); return; }
+  if (m.type === 'coords') { onCoords(m); return; }
   if (m.type !== 'result') return;
   const now = performance.now();
   recogMs.push([now, m.ms]);
@@ -92,6 +93,7 @@ window.addEventListener('message', (e) => {
   if (e.source !== parent) return;
   const m = e.data || {};
   if (m.type === 'frame') recog.postMessage({ type: 'frame', id: ++frameId, buf: m.buf, sent: m.sent }, [m.buf]);
+  else if (m.type === 'coordframe') recog.postMessage(m, [m.buf]);
   else if (m.type === 'reset') { recog.postMessage({ type: 'reset' }); tracker.reset(); boardPresent = false; presentRun = absentRun = 0; clearAnalysis(); }
   else if (m.type === 'status') setStatus(m.text, m.detail);
   else if (m.type === 'fps') { videoFps = m.value; if (statusKind === 'scanning') setStatus('scanning'); }
@@ -339,7 +341,8 @@ function renderInfo() {
       : `last move ${tracker.rawPair ? tracker.rawPair.join('-') : ''} · no history yet`;
   }
   $('fen').textContent = b ? b.fen : '';
-  $('scanInfo').textContent = `Last scan: ${tracker.lastDecision} · ${tracker.history.length} beliefs kept`;
+  const how = orientMode !== 'auto' ? 'set by you' : tracker.coordHint !== null ? 'from board coordinates' : 'guessed from pieces';
+  $('scanInfo').textContent = `Last scan: ${tracker.lastDecision} · ${tracker.history.length} beliefs kept · orientation ${how}`;
 }
 
 const GLYPH = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
@@ -361,9 +364,29 @@ function renderMini() {
 $('boardBox').addEventListener('toggle', renderMini);
 
 // ---------------- controls ----------------
+// Orientation from the board's rank/file labels. Two readings in a row must
+// agree to set it; overturning an orientation already in use takes three.
+let coordPrev = null, coordStreak = 0;
+function onCoords(m) {
+  if (orientMode !== 'auto') return;
+  const v = m.orient;                          // 'white' | 'black' | null (no labels found)
+  coordStreak = v && v === coordPrev ? coordStreak + 1 : 1;
+  coordPrev = v;
+  if (v) {
+    const wb = v === 'white';
+    const changing = tracker.coordHint !== null && tracker.coordHint !== wb;
+    if (coordStreak >= (changing ? 3 : 2)) {
+      const flipped = tracker.setCoordHint(wb);
+      if (flipped) { clearAnalysis(); parentPost({ type: 'rescan' }); }
+    }
+  }
+  renderInfo();
+}
+
 $('orientSeg').addEventListener('click', (e) => {
   const v = e.target.dataset && e.target.dataset.v; if (!v) return;
-  orientMode = v;
+  orientMode = v; coordPrev = null; coordStreak = 0;
+  parentPost({ type: 'coords-wanted', value: v === 'auto' });
   for (const b of $('orientSeg').children) b.classList.toggle('on', b.dataset.v === v);
   tracker.reset(); clearAnalysis();
   parentPost({ type: 'rescan' });   // re-read the current frame now (the video may be paused)

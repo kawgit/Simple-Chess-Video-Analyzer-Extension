@@ -111,7 +111,7 @@ def draw_arrow(dr, a, b, width, color, head=True, knight=False):
         bx, by = x1 - ux * hl, y1 - uy * hl
         dr.polygon([(x1, y1), (bx + nx * hw, by + ny * hw), (bx - nx * hw, by - ny * hw)], fill=color)
 
-def render(rng, sets_allowed, tex_allowed, pos=None, s=None, highlights=None, colors=None, extra=None):
+def render(rng, sets_allowed, tex_allowed, pos=None, s=None, highlights=None, colors=None, extra=None, coords=True):
     s = s or rng.randint(32, 72)            # square size px at render time
     S = 8 * s
     M = s                                    # margin around board
@@ -194,7 +194,7 @@ def render(rng, sets_allowed, tex_allowed, pos=None, s=None, highlights=None, co
     img = Image.alpha_composite(img.convert('RGBA'), over)
 
     # coordinates
-    if rng.random() < 0.6:
+    if rng.random() < 0.6 and coords:
         cd = ImageDraw.Draw(img)
         fnt = font(max(7, int(s * rng.uniform(0.18, 0.32))))
         col = rng.choice([(255, 255, 255), (0, 0, 0), (120, 120, 120), (240, 217, 181), (181, 136, 99)])

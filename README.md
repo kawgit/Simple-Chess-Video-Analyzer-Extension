@@ -27,7 +27,7 @@ The panel shows:
 
 The controls let you:
 
-- set which side is at the bottom (auto by default)
+- set which side is at the bottom (auto by default: read from the board's coordinates, or guessed from the pieces)
 - toggle the arrows and the move labels
 - pause scanning or reselect the board
 - copy the FEN, or open the position on Lichess
@@ -41,6 +41,8 @@ The controls let you:
 **Square classifier.** A small CNN (`extension/model/model.onnx`, 1.2 MB) classifies each of the 64 squares as empty or one of the 12 pieces. It runs on onnxruntime-web (WASM). Only squares whose pixels changed are re-classified.
 - It's trained only on synthetic boards from 39 lichess piece sets and 25 board themes, plus random colours.
 - The training boards are cluttered on purpose with arrows, circles, square highlights, move dots, coordinates, cursors, blur and video compression, so annotations don't fool it.
+
+**Board orientation.** About once a second, a small glyph reader (`extension/model/coords.onnx`, 0.8 MB) checks the board's rank and file labels. It looks in every corner of the edge squares and just outside the board. Labels running 8→1 top to bottom, or a→h left to right, mean white is at the bottom. Without labels, the orientation is guessed from where the pieces are, and re-checked whenever a move doesn't continue the current game.
 
 **Last-move detector** (`highlights.js`). It finds the unique pair of squares tinted by the same translucent overlay: lichess green-yellow, chess.com yellow, and others. Selected squares, check glows and red marks are ignored.
 

@@ -8,7 +8,7 @@
   const G = self.ChessGuard;
   if (!G || G.isBlockedHost(location.hostname)) return;   // never on chess playing sites
 
-  let scanMs = 200;                // max scan rate, set from the panel (default 5 Hz)
+  let scanMs = 33;                 // max scan rate, set from the panel (default 30 Hz)
   const BOARD_PX = 256;           // 8 x 32px squares for the model
   const EXT_ORIGIN = new URL(chrome.runtime.getURL('')).origin;
 
@@ -85,6 +85,7 @@
       case 'ready': if (!st.region) startSelect(); else toPanel({ type: 'status', text: 'scanning' }); break;
       case 'frame-done': st.busy = false; schedule(); break;
       case 'rescan': frameSeq++; confirmed = false; schedule(); break;   // treat the current frame as new
+      case 'coords-wanted': coordsWanted = !!m.value; lastCoordAt = 0; break;
       case 'arrows': st.arrows = m.arrows || []; st.badge = m.badge || null; drawArrows(); break;
       case 'show-arrows': st.showArrows = !!m.value; drawArrows(); break;
       case 'pause': st.paused = !!m.value; if (!st.paused) { frameSeq++; schedule(); } break;
@@ -231,7 +232,10 @@
         if (d > 0.004 && d < 0.5) { deltas.push(d); if (deltas.length > 40) deltas.shift(); }
         if (deltas.length >= 10) {
           const med = deltas.slice().sort((a, b) => a - b)[deltas.length >> 1];
-          const fps = Math.round(1 / med);
+          // snap to standard video rates (29.97 -> 30, 23.976 -> 24) so the reading doesn't flicker
+          const raw = 1 / med, STD = [24, 25, 30, 48, 50, 60];
+          const near = STD.find((r) => Math.abs(r - raw) < 1.5);
+          const fps = near || Math.round(raw);
           if (fps !== sentFps) { sentFps = fps; toPanel({ type: 'fps', value: fps }); }
         }
       }
@@ -274,6 +278,26 @@
     return v;
   }
 
+  // Board + half-square margin at a higher resolution, about once a second, so
+  // the panel can read the rank/file labels to work out the board's orientation.
+  const COORD_SQ = 64, COORD_MARGIN = 32, COORD_PX = COORD_SQ * 8 + 2 * COORD_MARGIN;
+  let coordsWanted = true, lastCoordAt = 0;
+  const coordCanvas = new OffscreenCanvas(COORD_PX, COORD_PX);
+  const cctx = coordCanvas.getContext('2d', { willReadFrequently: true });
+  function sendCoordFrame(v) {
+    const R = st.region, vw = v.videoWidth, vh = v.videoHeight;
+    const m = R.nw / 16, mh = R.nh / 16;          // half a square, normalised
+    const sx = (R.nx - m) * vw, sy = (R.ny - mh) * vh, sw = (R.nw + 2 * m) * vw, sh = (R.nh + 2 * mh) * vh;
+    cctx.fillStyle = '#000'; cctx.fillRect(0, 0, COORD_PX, COORD_PX);
+    // clip the source rectangle to the video, mapping the destination accordingly
+    const cx0 = Math.max(0, sx), cy0 = Math.max(0, sy), cx1 = Math.min(vw, sx + sw), cy1 = Math.min(vh, sy + sh);
+    if (cx1 <= cx0 || cy1 <= cy0) return;
+    const k = COORD_PX / sw, kh = COORD_PX / sh;
+    cctx.drawImage(v, cx0, cy0, cx1 - cx0, cy1 - cy0, (cx0 - sx) * k, (cy0 - sy) * kh, (cx1 - cx0) * k, (cy1 - cy0) * kh);
+    const img = cctx.getImageData(0, 0, COORD_PX, COORD_PX);
+    toPanel({ type: 'coordframe', size: COORD_PX, sq: COORD_SQ, margin: COORD_MARGIN, buf: img.data.buffer }, [img.data.buffer]);
+  }
+
   function watchdog() {
     placeOverlay();
     if (!st.running) return;
@@ -285,6 +309,10 @@
       if (rvfcVideo !== v) { hookFrames(v); frameSeq++; }
     } else frameSeq++;                         // no frame callbacks: fall back to polling at the max rate
     schedule();
+    if (coordsWanted && !st.paused && !document.hidden && performance.now() - lastCoordAt > 1000) {
+      lastCoordAt = performance.now();
+      try { sendCoordFrame(v); } catch (e) { /* ignore: next tick retries */ }
+    }
   }
 
   function scan() {
