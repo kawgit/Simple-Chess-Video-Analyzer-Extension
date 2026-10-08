@@ -213,15 +213,8 @@ export class BeliefTracker {
     }
     this.labels = labels; this.conf = conf;
     this.updateOrientation(labels, orientationMode);
-    const wb = this.whiteBottom;
-
-    const lp = new Float32Array(64 * NC);
-    for (let bi = 0; bi < 64; bi++) {
-      const ii = imgIndex(bi, wb);
-      for (let c = 0; c < NC; c++) lp[bi * NC + c] = Math.log(Math.max(probs[ii * NC + c], 1e-4));
-    }
-    const cells = freeDecode(lp);
-    let pairSq = pair ? pair.map((ii) => sqName(imgIndex(ii, wb))).sort() : null;
+    const auto = orientationMode !== 'white' && orientationMode !== 'black';
+    let { wb, lp, cells, pairSq } = this.readAs(probs, pair, this.whiteBottom);
     // Sites like chess.com tint a picked-up piece's square in the same colour as
     // the last move. A real move replaces the old highlight, so if both squares
     // of the last accepted move are still tinted, the extra square is a hover or
@@ -246,7 +239,42 @@ export class BeliefTracker {
     if (rawKey !== this.prevRawKey) { this.prevRawKey = rawKey; return { changed: false }; }
     if (rawKey === this.processedKey) return { changed: false };
     this.processedKey = rawKey;
+    // A new highlighted move that doesn't continue any known game (the fast path
+    // above found no continuation) may be a new game shown from the other side.
+    // Read the board both ways: switch if only the flipped reading is a legal
+    // position + legal move, or if both are and the piece placement clearly
+    // says the board is flipped.
+    if (auto && pairSq && this.history.length && pairSq.join('') !== this.lastPairKey) {
+      const alt = this.readAs(probs, pair, !wb);
+      const altDef = alt.pairSq && this.defaultBelief(alt.cells, alt.pairSq);
+      if (altDef) {
+        const curDef = this.defaultBelief(cells, pairSq);
+        const sc = orientationScore(labels);          // > 0: white pieces sit lower in the image
+        const favoursAlt = alt.wb ? sc > 1.0 : sc < -1.0;
+        if (!curDef || favoursAlt) {
+          this.orient = alt.wb; this.whiteBottom = alt.wb; this.orientVotes = 0;
+          this.history = []; this.lastPairKey = null; this.lastPair = null; this.best = null;
+          this.rawCells = alt.cells; this.rawPair = alt.pairSq;
+          const changed = this.processScan(alt.cells, alt.pairSq, alt.lp);
+          if (changed) this.lastDecision += ' (board flipped: new orientation)';
+          return { changed: true };
+        }
+      }
+    }
     return { changed: this.processScan(cells, pairSq, lp) };
+  }
+
+  // the scan read with a given orientation: per-square log-probs, decoded board
+  // and highlighted squares, all in board coordinates (a8..h1)
+  readAs(probs, pair, wb) {
+    const lp = new Float32Array(64 * NC);
+    for (let bi = 0; bi < 64; bi++) {
+      const ii = imgIndex(bi, wb);
+      for (let c = 0; c < NC; c++) lp[bi * NC + c] = Math.log(Math.max(probs[ii * NC + c], 1e-4));
+    }
+    const cells = freeDecode(lp);
+    const pairSq = pair ? pair.map((ii) => sqName(imgIndex(ii, wb))).sort() : null;
+    return { wb, lp, cells, pairSq };
   }
 
   updateOrientation(labels, mode) {
