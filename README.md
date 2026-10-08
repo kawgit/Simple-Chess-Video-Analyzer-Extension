@@ -1,6 +1,6 @@
 # Simple Chess Video Analyzer Extension
 
-**Live Chess Analysis** is a Chrome extension that watches the chessboard in a video (YouTube, Twitch, any page with a `<video>`) and shows Stockfish's top 3 lines next to it, with arrows on the board and chess.com-style move labels. It runs entirely in your browser: no account, no server, nothing is uploaded.
+**Simple Chess Video Analyzer Extension** is a Chrome extension that watches the chessboard in a video (YouTube, Twitch, any page with a `<video>`) and shows Stockfish's top 3 lines next to it, with arrows on the board and chess.com-style move labels. It runs entirely in your browser: no account, no server, nothing is uploaded.
 
 It won't run on chess.com, lichess.org or other sites where people play live games.
 

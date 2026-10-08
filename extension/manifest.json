@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Live Chess Analysis",
-  "version": "1.0.9",
-  "description": "Reads the chessboard in a video 5 times a second and shows Stockfish's top 3 lines, running entirely on your computer.",
+  "name": "Simple Chess Video Analyzer Extension",
+  "version": "1.0.10",
+  "description": "Live Stockfish analysis for chess videos: reads the board in real time, shows the top lines, best-move arrows and move labels.",
   "action": { "default_title": "Analyze the chessboard in this video", "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" } },
   "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
   "background": { "service_worker": "background.js" },

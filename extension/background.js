@@ -11,13 +11,13 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['guard.js', 'snap.js', 'content.js'] });
   } catch (e) {
-    console.warn('Live Chess Analysis: cannot run on this page', e);
+    console.warn('Simple Chess Video Analyzer Extension: cannot run on this page', e);
   }
 });
 
 function showBlockedNotice() {
   const d = document.createElement('div');
-  d.textContent = 'Live Chess Analysis is turned off on chess playing sites, so it can’t be used to get help during games.';
+  d.textContent = 'Simple Chess Video Analyzer Extension is turned off on chess playing sites, so it can’t be used to get help during games.';
   d.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#16181d;color:#fff;padding:10px 16px;border-radius:8px;font:13px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.4)';
   document.documentElement.appendChild(d);
   setTimeout(() => d.remove(), 4500);

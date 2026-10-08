@@ -33,7 +33,7 @@
       iframe{display:block;width:100%;border:0;height:360px;background:#16181d}
       .min iframe{display:none}
     </style>
-    <div class="wrap"><div class="bar"><span class="title">♞ Live analysis</span>
+    <div class="wrap"><div class="bar"><span class="title">♞ Simple Chess Video Analyzer Extension</span>
       <button data-a="min" title="Minimize">–</button><button data-a="close" title="Close">✕</button></div>
       <iframe allow="clipboard-write"></iframe></div>`;
   const wrap = shadow.querySelector('.wrap');
