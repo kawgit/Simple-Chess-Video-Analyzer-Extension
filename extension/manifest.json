@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Live Chess Analysis",
+  "version": "1.0.9",
+  "description": "Reads the chessboard in a video 5 times a second and shows Stockfish's top 3 lines, running entirely on your computer.",
+  "action": { "default_title": "Analyze the chessboard in this video", "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" } },
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["activeTab", "scripting"],
+  "commands": { "_execute_action": { "suggested_key": { "default": "Alt+Shift+A" } } },
+  "web_accessible_resources": [{ "resources": ["panel.html", "panel.css", "panel.js", "position.js", "lib/chess.js"], "matches": ["<all_urls>"] }],
+  "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" }
+}

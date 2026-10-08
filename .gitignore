@@ -1,0 +1,15 @@
+# training assets / outputs (see training/README section in the main README)
+training/pieces/
+training/boards/
+training/data/
+training/*.pt
+training/*.npz
+training/preview.png
+# generated test videos and scratch
+tests/site/game*/
+tests/ext_test/
+tests/*.png
+*.zip
+__pycache__/
+node_modules/
+.DS_Store

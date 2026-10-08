@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Live Chess Analysis</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div id="status"><span class="dot"></span><span id="statusText">Starting…</span></div>
+
+  <div id="evalRow">
+    <div id="evalBar"><div id="evalFill"></div><div id="evalMid"></div></div>
+    <div id="evalNum">–</div>
+  </div>
+  <div id="depth">&nbsp;</div>
+  <ol id="lines"></ol>
+
+  <div id="msg" hidden></div>
+
+  <div id="state"><div class="tmrow"><b id="toMove"></b><span id="moveLabel" hidden></span></div><span id="history"></span></div>
+
+  <div class="row">
+    <span class="lbl">Bottom</span>
+    <div class="seg" id="orientSeg"><button data-v="auto" class="on">Auto</button><button data-v="white">White</button><button data-v="black">Black</button></div>
+  </div>
+
+  <div class="row toggles">
+    <label class="tog"><input type="checkbox" id="arrows" checked><span>Arrows</span></label>
+    <label class="tog"><input type="checkbox" id="labels" checked><span>Move labels</span></label>
+  </div>
+
+  <div class="actions">
+    <button id="pause">Pause</button>
+    <button id="reselect" title="Draw the board box again">Reselect</button>
+    <button id="copy" title="Copy the position as FEN">Copy FEN</button>
+    <button id="lichess" title="Open this position on Lichess">Lichess ↗</button>
+  </div>
+
+  <details id="boardBox">
+    <summary>Detected board</summary>
+    <div class="row">
+      <span class="lbl">Max rate</span>
+      <input type="range" id="rate" min="1" max="30" step="1" value="5">
+      <span id="rateVal" class="hint">5 Hz</span>
+    </div>
+    <div id="perfRow" class="hint"><span id="perf"></span></div>
+    <div id="mini"></div>
+    <code id="fen"></code>
+    <div id="scanInfo"></div>
+  </details>
+
+<script type="module" src="panel.js"></script>
+</body>
+</html>
