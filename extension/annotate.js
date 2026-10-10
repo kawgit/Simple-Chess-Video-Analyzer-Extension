@@ -40,6 +40,7 @@ export function iconSVG(label) {
 
 const MIN_DEPTH = 10;    // don't label on shallower searches
 const FINAL_DEPTH = 16;  // label stops changing once both searches reach this
+const BRILLIANT_DEPTH = 14;   // the line must be deep enough to trust that the material isn't won back
 
 // side-to-move score -> win probability (0..1), same curve as the eval bar
 export function winProb(line) {
@@ -54,17 +55,29 @@ function material(c, color) {
   return m;
 }
 
-// Did the move give up material that the best play doesn't win straight back?
-function isSacrifice(prevFen, pv) {
+// A real piece sacrifice along the engine's main line: one of the mover's
+// pieces (not just pawns) is taken, the mover ends up at least two points down
+// right after it, and is still down material at the end of the line
+// (up to 10 plies, measured after the mover's own move so a recapture in
+// progress counts). Lines that win the material straight back are trades,
+// not sacrifices.
+const SAC_PLIES = 10;
+export function isSacrifice(prevFen, pv) {
+  if (!pv || pv.length < 3) return false;              // too short to judge
   const c = new Chess(); c.load(prevFen, { skipValidation: true });
   const me = c.turn(), before = material(c, me);
-  let worst = 0;
-  for (let i = 0; i < Math.min(pv.length, 5); i++) {
-    try { c.move({ from: pv[i].slice(0, 2), to: pv[i].slice(2, 4), promotion: pv[i][4] || undefined }); } catch { break; }
-    if (i % 2 === 1) worst = Math.min(worst, material(c, me) - before);   // after each opponent reply
+  let lostPiece = false, dip = 0, end = 0, n = Math.min(pv.length, SAC_PLIES);
+  for (let i = 0; i < n; i++) {
+    let m;
+    try { m = c.move({ from: pv[i].slice(0, 2), to: pv[i].slice(2, 4), promotion: pv[i][4] || undefined }); } catch { n = i; break; }
+    const d = material(c, me) - before;
+    if (c.isCheckmate()) return lostPiece && dip <= -2;   // gave up a piece and mated: the classic brilliancy
+    if (i % 2 === 1) {                                  // opponent reply
+      if (m.captured && m.captured !== 'p') lostPiece = true;
+      dip = Math.min(dip, d);
+    } else end = d;                                     // after the mover's own move
   }
-  const end = material(c, me) - before;
-  return worst <= -2 && end <= -1;
+  return n >= 4 && lostPiece && dip <= -2 && end <= -1;
 }
 
 // prev: {depth, lines} for the position before the move (mover to move)
@@ -87,9 +100,13 @@ export function classify(move, prev, after, prevLabel) {
   if (inTop === 0 || loss <= 0.005) {
     const second = prev.lines[1];
     const onlyMove = second && wBest - winProb(second) >= 0.15 && wBest > 0.4;
-    if (played >= 0.5 && isSacrifice(prev.fen, playedPv) && loss <= 0.02) label = 'brilliant';
+    // Brilliant (chess.com's rule): a good piece sacrifice that is the best move,
+    // that doesn't leave you worse, and that you needed - not when the other
+    // top moves already keep you completely winning.
+    const alreadyWinning = second && winProb(second) >= 0.8;
+    if (prev.depth >= BRILLIANT_DEPTH && played >= 0.5 && !alreadyWinning && isSacrifice(prev.fen, playedPv)) label = 'brilliant';
     else label = onlyMove ? 'great' : 'best';
-  } else if (loss <= 0.02) label = isSacrifice(prev.fen, playedPv) && played >= 0.5 ? 'brilliant' : 'excellent';
+  } else if (loss <= 0.02) label = 'excellent';
   else if ((prevLabel === 'mistake' || prevLabel === 'blunder') && wBest >= 0.6 && loss >= 0.1) label = 'miss';
   else if (loss <= 0.05) label = 'good';
   else if (loss <= 0.10) label = 'inaccuracy';

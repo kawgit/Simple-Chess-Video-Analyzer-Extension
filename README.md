@@ -60,7 +60,7 @@ The controls let you:
 
 **Engine.** Stockfish 19 lite, single-threaded WASM, with MultiPV 3. The same instance and hash table are reused across positions. When the move played was one of the engine's lines, its evaluation is shown instantly while the new search catches up.
 
-**Move labels** (`annotate.js`). Labels come from the loss in win probability compared with the engine's best move: Brilliant, Great, Best, Excellent, Good, Inaccuracy, Mistake, Miss, Blunder.
+**Move labels** (`annotate.js`). Labels come from the loss in win probability compared with the engine's best move: Brilliant, Great, Best, Excellent, Good, Inaccuracy, Mistake, Miss, Blunder. Brilliant follows chess.com's rule: the best move, a real piece sacrifice along the engine's line (a piece is taken and the material isn't won back within 10 plies, unless it ends in mate), not worse afterwards, and not already completely winning with another move. It needs a search of depth 14 or more.
 
 ## Repository layout
 
