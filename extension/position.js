@@ -24,6 +24,9 @@ export const MAX_BELIEFS = 100;
 const MATCH_NATS = 7;
 // ...but a square the move itself changed must not be confidently read otherwise.
 const TOUCHED_NATS = 2;
+// ...and no single untouched square may be flatly contradicted: a confident
+// reading that disagrees means the belief itself has a misread piece in it
+const SQUARE_NATS = 6;
 
 const imgIndex = (bi, whiteBottom) => (whiteBottom ? bi : 63 - bi);
 const sqName = (bi) => FILES[bi & 7] + (8 - (bi >> 3));
@@ -260,6 +263,17 @@ export class BeliefTracker {
     if (rawKey !== this.prevRawKey) { this.prevRawKey = rawKey; return { changed: false }; }
     if (rawKey === this.processedKey) return { changed: false };
     this.processedKey = rawKey;
+    // Repair: the current position was accepted earlier, but a settled scan now
+    // flatly contradicts it on some square (an earlier frame misread a piece
+    // and the game history carried the mistake along). Drop the beliefs from
+    // that scan and rebuild this move from the board as it reads now.
+    if (pairSq && this.best && pairSq.join('') === this.lastPairKey && this.contradicts(this.best.fen, lp)) {
+      this.history = this.history.filter((b) => b.scanId !== this.latestScan);
+      this.lastPairKey = null; this.best = null;
+      const changed = this.processScan(cells, pairSq, lp);
+      if (this.best) this.lastDecision += ' (corrected a misread piece)';
+      return { changed: changed || true };
+    }
     // A new highlighted move that doesn't continue any known game (the fast path
     // above found no continuation) may be a new game shown from the other side.
     // Read the board both ways: switch if only the flipped reading is a legal
@@ -290,6 +304,22 @@ export class BeliefTracker {
       }
     }
     return { changed: this.processScan(cells, pairSq, lp) };
+  }
+
+  // Does the scan confidently read a different piece than this position on
+  // some square? Only piece-for-piece swaps count (a knight read where the
+  // belief has a queen): if a square disagrees on whether there's a piece at
+  // all, a piece is probably being dragged or hovered, so nothing is repaired.
+  contradicts(fen, lp) {
+    const bc = cellsOf(fen);
+    let swaps = 0;
+    for (let i = 0; i < 64; i++) {
+      let top = 0; for (let c = 1; c < NC; c++) if (lp[i * NC + c] > lp[i * NC + top]) top = c;
+      if (lp[i * NC + top] - lp[i * NC + CI[bc[i]]] <= SQUARE_NATS) continue;
+      if (top === 0 || bc[i] === '.') return false;
+      swaps++;
+    }
+    return swaps > 0 && swaps <= 2;
   }
 
   // the scan read with a given orientation: per-square log-probs, decoded board
@@ -364,7 +394,7 @@ export class BeliefTracker {
       for (let i = 0; i < 64; i++) {
         const di = lp[i * NC + CI[nc[i]]] - lp[i * NC + CI[cells[i]]];
         if (nc[i] !== before[i]) { if (di < -TOUCHED_NATS) return false; }
-        else d += di;
+        else { if (di < -SQUARE_NATS) return false; d += di; }
       }
       return d >= -MATCH_NATS;
     };

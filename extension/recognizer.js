@@ -25,9 +25,28 @@
   class Recognizer {
     // infer(Float32Array [n*32*32*3] raw RGB 0..255, n) -> Promise<Float32Array [n*13] probabilities>
     constructor(infer) { this.infer = infer; this.reset(); }
-    reset() { this.sig = new Array(64).fill(null); this.probs = new Array(64).fill(null); }
+    reset() { this.sig = new Array(64).fill(null); this.probs = new Array(64).fill(null); this.lo = 0; this.hi = 255; }
+
+    // Video levels: some streams/reaction videos are washed out (black pieces
+    // come through as mid-grey and get read as white). Stretch the board's
+    // brightness range (1st..99.5th percentile) to 0..255 before classifying.
+    // Only re-tuned when the range moves noticeably; then every square is redone.
+    levels(px) {
+      const h = new Uint32Array(256); let n = 0;
+      for (let i = 0; i < px.length; i += 8) { h[(px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8]++; n++; }
+      let lo = 0, hi = 255, acc = 0;
+      for (let v = 0; v < 256; v++) { acc += h[v]; if (acc >= n * 0.01) { lo = v; break; } }
+      acc = 0;
+      for (let v = 255; v >= 0; v--) { acc += h[v]; if (acc >= n * 0.005) { hi = v; break; } }
+      if (hi - lo < 120) lo = Math.max(0, hi - 120);
+      if (Math.abs(lo - this.lo) > 6 || Math.abs(hi - this.hi) > 6) {
+        this.lo = lo; this.hi = hi; this.sig.fill(null);
+      }
+    }
 
     async classifyBoard(px) {
+      this.levels(px);
+      const lo = this.lo, k = 255 / Math.max(1, this.hi - this.lo);
       const todo = [];
       const sigs = [];
       for (let i = 0; i < 64; i++) {
@@ -44,7 +63,11 @@
           let o = n * S * S * 3;
           for (let y = 0; y < S; y++) {
             let pi = ((r * S + y) * BW + f * S) * 4;
-            for (let xx = 0; xx < S; xx++, pi += 4) { x[o++] = px[pi]; x[o++] = px[pi + 1]; x[o++] = px[pi + 2]; }
+            for (let xx = 0; xx < S; xx++, pi += 4) {
+              x[o++] = Math.min(255, Math.max(0, (px[pi] - lo) * k));
+              x[o++] = Math.min(255, Math.max(0, (px[pi + 1] - lo) * k));
+              x[o++] = Math.min(255, Math.max(0, (px[pi + 2] - lo) * k));
+            }
           }
         });
         const p = await this.infer(x, todo.length);
