@@ -111,7 +111,7 @@ def draw_arrow(dr, a, b, width, color, head=True, knight=False):
         bx, by = x1 - ux * hl, y1 - uy * hl
         dr.polygon([(x1, y1), (bx + nx * hw, by + ny * hw), (bx - nx * hw, by - ny * hw)], fill=color)
 
-def render(rng, sets_allowed, tex_allowed, pos=None, s=None, highlights=None, colors=None, extra=None, coords=True):
+def render(rng, sets_allowed, tex_allowed, pos=None, s=None, highlights=None, colors=None, extra=None, coords=True, coord_wb=None, coord_fn=None):
     s = s or rng.randint(32, 72)            # square size px at render time
     S = 8 * s
     M = s                                    # margin around board
@@ -194,11 +194,12 @@ def render(rng, sets_allowed, tex_allowed, pos=None, s=None, highlights=None, co
     img = Image.alpha_composite(img.convert('RGBA'), over)
 
     # coordinates
-    if rng.random() < 0.6 and coords:
+    if coord_fn is not None: coord_fn(img, M, s)
+    elif coord_wb is not None or (rng.random() < 0.6 and coords):
         cd = ImageDraw.Draw(img)
         fnt = font(max(7, int(s * rng.uniform(0.18, 0.32))))
         col = rng.choice([(255, 255, 255), (0, 0, 0), (120, 120, 120), (240, 217, 181), (181, 136, 99)])
-        files = 'abcdefgh' if rng.random() < .5 else 'hgfedcba'
+        files = 'abcdefgh' if (rng.random() < .5 if coord_wb is None else coord_wb) else 'hgfedcba'
         ranks = '87654321' if files[0] == 'a' else '12345678'
         for i in range(8):
             cd.text((M + i * s + s - s * 0.22, M + S - s * 0.3), files[i], fill=col, font=fnt)

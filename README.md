@@ -42,7 +42,7 @@ The controls let you:
 - It's trained only on synthetic boards from 39 lichess piece sets and 25 board themes, plus random colours.
 - The training boards are cluttered on purpose with arrows, circles, square highlights, move dots, coordinates, cursors, blur and video compression, so annotations don't fool it.
 
-**Board orientation.** About once a second, a small glyph reader (`extension/model/coords.onnx`, 0.8 MB) checks the board's rank and file labels. It looks in every corner of the edge squares and just outside the board. Labels running 8→1 top to bottom, or a→h left to right, mean white is at the bottom. Without labels, the orientation is guessed from where the pieces are, and re-checked whenever a move doesn't continue the current game.
+**Board orientation.** A few times a second, a small network (`extension/model/orient.onnx`, 0.9 MB, about 8 ms) reads the four edge strips of the board, covering labels inside the edge squares and just outside the board, and answers white at the bottom, black at the bottom, or no readable labels. It runs in its own worker so it never slows the scans, and it re-reads at once when the board changes a lot. When it isn't sure, the side is decided by whether the highlighted move is legal, then by facing pawns, then by which half each side's pieces are on.
 
 **Last-move detector** (`highlights.js`). It finds the unique pair of squares tinted by the same translucent overlay: lichess green-yellow, chess.com yellow, and others. Selected squares, check glows and red marks are ignored.
 

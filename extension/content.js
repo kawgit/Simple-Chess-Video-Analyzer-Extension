@@ -86,6 +86,10 @@
       case 'frame-done': st.inFlight = Math.max(0, (st.inFlight || 0) - 1); schedule(); break;
       case 'rescan': frameSeq++; confirmed = false; schedule(); break;   // treat the current frame as new
       case 'coords-wanted': coordsWanted = !!m.value; lastCoordAt = 0; break;
+      case 'coords-now':                       // the board changed a lot: re-read the labels now, then a few more times quickly
+        coordBurst = 3;
+        if (coordsWanted && st.running) { const v = usableVideo(); if (v) { lastCoordAt = performance.now(); try { sendCoordFrame(v); } catch (e) {} } }
+        break;
       case 'arrows': st.arrows = m.arrows || []; st.badge = m.badge || null; drawArrows(); break;
       case 'show-arrows': st.showArrows = !!m.value; drawArrows(); break;
       case 'pause': st.paused = !!m.value; if (!st.paused) { frameSeq++; schedule(); } break;
@@ -279,12 +283,13 @@
     return v;
   }
 
-  // Board + half-square margin at a higher resolution, about once a second, so
+  // Board + half-square margin (576 px, 64 px squares) a few times a second, so
   // the panel can read the rank/file labels to work out the board's orientation.
   const COORD_SQ = 64, COORD_MARGIN = 32, COORD_PX = COORD_SQ * 8 + 2 * COORD_MARGIN;
-  let coordsWanted = true, lastCoordAt = 0;
+  let coordsWanted = true, lastCoordAt = 0, coordBurst = 0;
   const coordCanvas = new OffscreenCanvas(COORD_PX, COORD_PX);
   const cctx = coordCanvas.getContext('2d', { willReadFrequently: true });
+  cctx.imageSmoothingQuality = 'high';           // proper downscaling: labels are small
   function sendCoordFrame(v) {
     const R = st.region, vw = v.videoWidth, vh = v.videoHeight;
     const m = R.nw / 16, mh = R.nh / 16;          // half a square, normalised
@@ -310,8 +315,8 @@
       if (rvfcVideo !== v) { hookFrames(v); frameSeq++; }
     } else frameSeq++;                         // no frame callbacks: fall back to polling at the max rate
     schedule();
-    if (coordsWanted && !st.paused && !document.hidden && performance.now() - lastCoordAt > 1000) {
-      lastCoordAt = performance.now();
+    if (coordsWanted && !st.paused && !document.hidden && performance.now() - lastCoordAt > (coordBurst > 0 ? 120 : 400)) {
+      lastCoordAt = performance.now(); if (coordBurst > 0) coordBurst--;
       try { sendCoordFrame(v); } catch (e) { /* ignore: next tick retries */ }
     }
   }

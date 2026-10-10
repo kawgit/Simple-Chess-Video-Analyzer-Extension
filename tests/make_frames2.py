@@ -2,11 +2,8 @@
 messy in-between frames: animation (piece mid-slide), hovering a piece (lichess
 style: origin square emptied, piece floating), chess.com-style drag (3 squares
 highlighted), and arrows coming and going."""
-import os, sys, tempfile
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
 import sys, random, json, os
-sys.path.insert(0, os.path.join(ROOT, 'training'))
+sys.path.insert(0, '/home/claude/train')
 import numpy as np, chess
 from PIL import Image, ImageDraw
 import gen
@@ -27,9 +24,9 @@ def img_sq(sq, wb):
     r, f = 7 - chess.square_rank(sq), chess.square_file(sq)
     return (r, f) if wb else (7 - r, 7 - f)
 
-def main(out, pset, style, wb, seed):
+def main(out, pset, style, wb, seed, moves=None, labels=False):
     st = STYLES[style]; rng = random.Random(seed)
-    moves = 'e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Na5 Bc2 c5 d4 Qc7'.split()
+    moves = moves or 'e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Na5 Bc2 c5 d4 Qc7'.split()
     b = chess.Board(); frames = []; k = 0
     piece_img = lambda c: gen.load_piece(pset, c)
 
@@ -45,7 +42,7 @@ def main(out, pset, style, wb, seed):
                 p = piece_img(name).resize((s, s))
                 img.paste(p, (int(M + x * s), int(M + y * s)), p)
         r2 = random.Random(seed * 1000 + k)   # arrows/marks differ per frame
-        img, _, M, s = gen.render(r2, [pset], [], pos=pos, s=72, highlights=hls, colors=st['colors'], extra=extra)
+        img, _, M, s = gen.render(r2, [pset], [], pos=pos, s=72, highlights=hls, colors=st['colors'], extra=extra, coords=False, coord_wb=(wb if labels else None))
         board_im = img.crop((M - 6, M - 6, M + 8 * s + 6, M + 8 * s + 6)).resize((600, 600), Image.LANCZOS)
         frame = Image.new('RGB', (1280, 720), (24, 26, 30)); frame.paste(board_im, (90, 50))
         d = ImageDraw.Draw(frame); d.rectangle([900, 60, 1220, 300], fill=(70, 90, 110))

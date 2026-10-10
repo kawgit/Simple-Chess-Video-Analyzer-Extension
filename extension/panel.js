@@ -36,10 +36,11 @@ function lastMoveLabel() {
 
 // ---------------- recognition ----------------
 const recog = new Worker('recog-worker.js');
+const coordWorker = new Worker('coords-worker.js');
+coordWorker.onmessage = (e) => { if (e.data.type === 'coords') { window.__coordMs = e.data.ms; onCoords(e.data); } };
 recog.onmessage = (e) => {
   const m = e.data;
   if (m.type === 'error') { setStatus('error', 'recognizer failed to load: ' + m.error); parentPost({ type: 'frame-done' }); return; }
-  if (m.type === 'coords') { onCoords(m); return; }
   if (m.type !== 'result') return;
   parentPost({ type: 'frame-done' });          // free the capture slot right away; the work below is local
   const now = performance.now();
@@ -49,10 +50,27 @@ recog.onmessage = (e) => {
   if (window.__dbg) window.__dbg.push([performance.now() + performance.timeOrigin, m.pair ? m.pair.join('-') : '-', tracker.lastDecision, res.changed, m.sent, Math.round(m.ms), m.computed, Math.round(performance.now() + performance.timeOrigin - tUpd)]);
   lastConf = tracker.conf;
   updatePresence(looksLikeBoard(m));
+  checkBoardChange();
   if (res.changed && boardPresent) onPosition();
   renderPending = true;                       // DOM updates at most once per animation frame
   frameT.push(now);
 };
+
+// A new game (possibly shown from the other side) or a jump in the video:
+// many squares changed at once, or a move that doesn't continue the game.
+// Ask for the coordinate labels right away instead of waiting for the next
+// once-a-second reading.
+let prevLabels = null, lastCoordsNow = 0;
+function checkBoardChange() {
+  const L = tracker.labels;
+  let diff = 0;
+  if (prevLabels) for (let i = 0; i < 64; i++) if (L[i] !== prevLabels[i]) diff++;
+  prevLabels = L;
+  const surprise = tracker.unexplained; tracker.unexplained = false;
+  if (orientMode !== 'auto' || !boardPresent) return;
+  const now = performance.now();
+  if ((diff >= 10 || surprise) && now - lastCoordsNow > 400) { lastCoordsNow = now; parentPost({ type: 'coords-now' }); }
+}
 
 // A scan looks like a board when the squares alternate between two clear
 // colours and the classifier is confident, with pieces of both colours.
@@ -99,7 +117,7 @@ window.addEventListener('message', (e) => {
   if (e.source !== parent) return;
   const m = e.data || {};
   if (m.type === 'frame') recog.postMessage({ type: 'frame', id: ++frameId, buf: m.buf, sent: m.sent }, [m.buf]);
-  else if (m.type === 'coordframe') recog.postMessage(m, [m.buf]);
+  else if (m.type === 'coordframe') coordWorker.postMessage(m, [m.buf]);
   else if (m.type === 'reset') { recog.postMessage({ type: 'reset' }); tracker.reset(); boardPresent = false; presentRun = absentRun = 0; clearAnalysis(); }
   else if (m.type === 'status') setStatus(m.text, m.detail);
   else if (m.type === 'fps') { videoFps = m.value; if (statusKind === 'scanning') setStatus('scanning'); }

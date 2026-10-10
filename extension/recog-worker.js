@@ -1,12 +1,12 @@
 // Off the UI thread: square classifier (onnxruntime-web, WASM SIMD, 1 thread)
 // + last-move highlight detector. One message in (board pixels), one scan out.
-importScripts('recognizer.js', 'highlights.js', 'coords.js', 'ort/ort.wasm.min.js');
+importScripts('recognizer.js', 'highlights.js', 'ort/ort.wasm.min.js');
 
 ort.env.wasm.numThreads = 1;
 ort.env.wasm.wasmPaths = new URL('ort/', self.location.href).href;
 const CLASSES = self.ChessRecognizer.CLASSES;
 
-let rec = null, initError = null, coordSession = null;
+let rec = null, initError = null;
 const ready = (async () => {
   try {
     const session = await ort.InferenceSession.create(new URL('model/model.onnx', self.location.href).href, { executionProviders: ['wasm'] });
@@ -14,26 +14,19 @@ const ready = (async () => {
       const out = await session.run({ x: new ort.Tensor('float32', x, [n, 32, 32, 3]) });
       return out.p.data;
     });
-    // coordinate-label reader (optional: orientation falls back to guessing without it)
-    try { coordSession = await ort.InferenceSession.create(new URL('model/coords.onnx', self.location.href).href, { executionProviders: ['wasm'] }); }
-    catch (e) { coordSession = null; }
   } catch (e) { initError = String(e && e.message || e); }
 })();
 
-onmessage = async (e) => {
-  const m = e.data;
+// Messages are handled strictly one at a time: onnxruntime sessions and the
+// recognizer's change cache must not be used by two scans at once (two frames
+// can be in flight at once).
+let queue = Promise.resolve();
+onmessage = (e) => { queue = queue.then(() => handle(e.data)).catch(() => {}); };
+
+async function handle(m) {
   await ready;
   if (initError) { postMessage({ type: 'error', error: initError, id: m.id }); return; }
   if (m.type === 'reset') { rec.reset(); return; }
-  if (m.type === 'coordframe') {
-    if (!coordSession) return;
-    const C = self.ChessCoords;
-    const { data, strips, n } = C.extractPatches(new Uint8ClampedArray(m.buf), m.size, m.sq, m.margin);
-    const out = await coordSession.run({ x: new ort.Tensor('float32', data, [n, C.P, C.P, 3]) });
-    const res = C.scoreStrips(out.p.data, strips);
-    postMessage({ type: 'coords', orient: res.orient, llr: res.llr, used: res.used });
-    return;
-  }
   if (m.type === 'frame') {
     const t0 = performance.now();
     const px = new Uint8ClampedArray(m.buf);
@@ -46,4 +39,4 @@ onmessage = async (e) => {
     const hl = self.ChessHighlights.findLastMove(px, cells);
     postMessage({ type: 'result', id: m.id, sent: m.sent, probs: res.probs, pair: hl.pair, tinted: hl.tinted, contrast: hl.contrast, spread: hl.spread, computed: res.computed, ms: performance.now() - t0 }, [res.probs.buffer]);
   }
-};
+}

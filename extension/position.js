@@ -415,6 +415,7 @@ export class BeliefTracker {
       }
     }
     if (fast && !fresh.length) { --this.scanSeq; return null; }
+    if (!fresh.length && this.history.length) this.unexplained = true;   // doesn't continue the known game
 
     // default belief: just this scan
     const def = this.defaultBelief(cells, pairSq);
