@@ -62,8 +62,17 @@ function material(c, color) {
 // progress counts). Lines that win the material straight back are trades,
 // not sacrifices.
 const SAC_PLIES = 10;
+const sacCache = new Map();                            // classify runs on every engine update: work each line out once
 export function isSacrifice(prevFen, pv) {
   if (!pv || pv.length < 3) return false;              // too short to judge
+  const key = prevFen + '|' + pv.slice(0, SAC_PLIES).join(' ');
+  if (sacCache.has(key)) return sacCache.get(key);
+  const r = sacrificeOnLine(prevFen, pv);
+  if (sacCache.size > 500) sacCache.clear();
+  sacCache.set(key, r);
+  return r;
+}
+function sacrificeOnLine(prevFen, pv) {
   const c = new Chess(); c.load(prevFen, { skipValidation: true });
   const me = c.turn(), before = material(c, me);
   let lostPiece = false, dip = 0, end = 0, n = Math.min(pv.length, SAC_PLIES);
@@ -71,7 +80,7 @@ export function isSacrifice(prevFen, pv) {
     let m;
     try { m = c.move({ from: pv[i].slice(0, 2), to: pv[i].slice(2, 4), promotion: pv[i][4] || undefined }); } catch { n = i; break; }
     const d = material(c, me) - before;
-    if (c.isCheckmate()) return lostPiece && dip <= -2;   // gave up a piece and mated: the classic brilliancy
+    if (m.san.endsWith('#')) return lostPiece && dip <= -2;   // gave up a piece and mated: the classic brilliancy
     if (i % 2 === 1) {                                  // opponent reply
       if (m.captured && m.captured !== 'p') lostPiece = true;
       dip = Math.min(dip, d);

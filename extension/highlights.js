@@ -71,9 +71,27 @@
   }
 
   // cells: optional 64-char string (image order) to judge move plausibility
+  // Undo smooth brightness changes across the board: video-player gradients
+  // (YouTube's title and control bars), vignettes, dark caption bands. Each
+  // square's brightness relative to its colour's base is factored into a row
+  // term times a column term (medians, so the two highlighted squares don't
+  // move them) and divided out. A highlight changes a square's colour, which
+  // this leaves alone.
+  function unshade(bgs, par) {
+    const baseOf = (b) => [0, 1].map((p) => [0, 1, 2].map((c) => median(b.filter((_, i) => par(i) === p).map((v) => v[c]))));
+    const base = baseOf(bgs);
+    const sc = bgs.map((v, i) => { const b = base[par(i)]; return dot(v, b) / Math.max(1, dot(b, b)); });
+    const row = [], col = [];
+    for (let r = 0; r < 8; r++) row.push(median(sc.slice(r * 8, r * 8 + 8)));
+    for (let c = 0; c < 8; c++) col.push(median([0, 1, 2, 3, 4, 5, 6, 7].map((r) => sc[r * 8 + c] / Math.max(0.05, row[r]))));
+    const shade = (i) => Math.max(0.15, row[i >> 3] * col[i & 7]);
+    if (sc.every((_, i) => Math.abs(shade(i) - 1) < 0.04)) return bgs;   // evenly lit: leave as is
+    const out = bgs.map((v, i) => v.map((x) => x / shade(i))); out.shaded = true; return out;
+  }
+
   function findLastMove(px, cells) {
-    const bgs = squareBackgrounds(px, cells);
     const par = (i) => ((i >> 3) + (i & 7)) & 1;
+    const bgs = unshade(squareBackgrounds(px, cells), par);
     const base = [0, 1].map((p) => {
       const g = bgs.filter((_, i) => par(i) === p);
       return [0, 1, 2].map((c) => median(g.map((v) => v[c])));
@@ -117,6 +135,9 @@
     // a third square that almost matches means we can't be sure (e.g. chess.com drag)
     cands = cands.filter(([a, b]) => !tinted.some((t) => t !== a && t !== b && (same(a, t, 1.3) || same(b, t, 1.3))));
     if (cells) cands = cands.filter(([a, b]) => movePlausible(cells, a, b));
+    // on an unevenly lit board only trust typical last-move colours (yellow/green)
+    const lmHue = (g) => g.every((i) => { const t = sub(bgs[i], base[par(i)]); return t[1] - t[2] > 20 && t[1] > t[0] - 25; });
+    if (bgs.shaded) cands = cands.filter(lmHue);
     if (cands.length > 1) {
       // prefer typical last-move hues (yellow .. green) over red/blue marks
       // yellowness of the tint: last-move overlays push red/green up relative to blue
@@ -126,6 +147,18 @@
       });
       const lmOnes = scored.filter((x) => x.lm);
       cands = lmOnes.length === 1 ? [lmOnes[0].g] : [];
+    }
+    // Some sites tint the from- and to-squares differently. If no same-tint
+    // pair turned up but only a few squares are tinted, accept the one pair of
+    // them where exactly one square holds a piece (the tracker still requires
+    // a legal move).
+    if (!cands.length && cells && !groups.some((g) => g.length === 2) && tinted.length >= 2 && tinted.length <= 3) {
+      const alt = [];
+      for (let x = 0; x < tinted.length; x++) for (let y = x + 1; y < tinted.length; y++) {
+        const a = tinted[x], b = tinted[y];
+        if ((cells[a] === '.') !== (cells[b] === '.')) alt.push([a, b].sort((u, v) => u - v));
+      }
+      if (alt.length === 1) cands = alt;
     }
     return { pair: cands.length === 1 ? cands[0] : null, tinted, groups, dev, thr, bgs, base, contrast: baseDiff, spread: Math.max(...spread) };
   }
